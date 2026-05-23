@@ -1,7 +1,7 @@
 "use client";
 
 import { useSignUp } from "@clerk/nextjs";
-
+import { toast } from "sonner";
 import Link from "next/link";
 import {
   Card,
@@ -33,16 +33,29 @@ export default function SignUpPage() {
   //   }
   async function submit(e: React.SubmitEvent) {
     e.preventDefault();
+    console.log(fetchStatus);
     if (fetchStatus === "fetching" || !signUp) {
       return;
     }
 
     try {
-      await signUp.create({
+      console.log("Email:", emailAddress);
+      console.log("Password:", password);
+      const signUpResult = await signUp.create({
         emailAddress,
         password,
       });
-      await signUp.verifications.sendEmailCode();
+      console.log(JSON.stringify(signUpResult, null, 2));
+      if (signUpResult.error) {
+        toast.error(signUpResult.error.message);
+        return;
+      }
+      const verificationResult = await signUp.verifications.sendEmailCode();
+      console.log(JSON.stringify(verificationResult, null, 2));
+      if (verificationResult.error) {
+        toast.error(verificationResult.error.message);
+        return;
+      }
       setPendingVerification(true);
     } catch (err) {
       console.log(JSON.stringify(err, null, 2));
@@ -162,6 +175,7 @@ export default function SignUpPage() {
           </p>
         </CardFooter>
       </Card>
+      <div id="clerk-captcha" />
     </div>
   );
 }

@@ -1,24 +1,37 @@
 import { clerkMiddleware, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 const publicRoutes = ["/", "/sign-in", "/sign-up", "/api/webhook/register"];
+
+// Routes where we actually need to check the user's role
+const needsRoleCheck = (pathname: string) =>
+  pathname.startsWith("/dashboard") ||
+  pathname.startsWith("/admin") ||
+  publicRoutes.includes(pathname);
+
 export default clerkMiddleware(async (auth, req) => {
+  const pathname = req.nextUrl.pathname;
   const { isAuthenticated, redirectToSignIn, userId } = await auth();
-  if (!publicRoutes.includes(req.nextUrl.pathname) && !isAuthenticated) {
+
+  if (!publicRoutes.includes(pathname) && !isAuthenticated) {
     return redirectToSignIn();
   }
-  if (isAuthenticated) {
+
+  // Only fetch user details when role-based routing is needed.
+  // This avoids making an expensive API call on every single request
+  // (JS, CSS, images, fonts, etc.) which was causing OOM crashes.
+  if (isAuthenticated && needsRoleCheck(pathname)) {
     try {
-      const user = await (await clerkClient()).users.getUser(userId);
-      console.log(`userdetails : : : ${user}`);
+      const client = await clerkClient();
+      const user = await client.users.getUser(userId);
       const role = user?.privateMetadata?.role;
-      console.log(`user role : : : ${role}`);
-      if (role === "admin" && req.nextUrl.pathname.startsWith("/dashboard")) {
+
+      if (role === "admin" && pathname.startsWith("/dashboard")) {
         return NextResponse.redirect(new URL("/admin/dashboard", req.url));
       }
-      if (role != "admin" && req.nextUrl.pathname.startsWith("/admin")) {
+      if (role !== "admin" && pathname.startsWith("/admin")) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
-      if (publicRoutes.includes(req.nextUrl.pathname)) {
+      if (publicRoutes.includes(pathname)) {
         return NextResponse.redirect(
           new URL(
             role === "admin" ? "/admin/dashboard" : "/dashboard",
@@ -27,7 +40,7 @@ export default clerkMiddleware(async (auth, req) => {
         );
       }
     } catch (error) {
-      console.log(error);
+      console.error("Middleware role check failed:", error);
       return NextResponse.redirect(new URL("/error", req.url));
     }
   }
